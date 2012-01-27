@@ -1,0 +1,1 @@
+java -cp /Users/njoubert/TA/CS243/web/joeq/code/lib/parun.jar:/Users/njoubert/TA/CS243/web/joeq/code/lib/jwutil.jar:/Users/njoubert/TA/CS243/web/joeq/code/lib/optimize.jar:/Users/njoubert/TA/CS243/web/joeq/code/lib/javabdd-1.0b2.jar:/Users/njoubert/TA/CS243/web/joeq/code/lib/test.jar:/Users/njoubert/TA/CS243/web/joeq/code/lib/joeq.jar $@
