@@ -34,24 +34,32 @@ public class MySolver implements Flow.Solver {
         // this needs to come first.
         analysis.preprocess(cfg);
 
+	//Initialize the set of blocks needing update to the algorithm to
+	//only the entry point
 	Set<BasicBlock> blocksNeedingUpdate = new LinkedHashSet<BasicBlock>();
-
 	BasicBlock startBlock = analysis.isForward() ? cfg.entry() : cfg.exit();
-	
-	blocksNeedingUpdate.add(startBlock);
+	assert startBlock.size() == 0;
+	if(analysis.isForward())
+	    {
+		assert startBlock.getSuccessors().size() == 1;
+		assert startBlock.getSuccessors().get(0).size() > 0;
+		startBlock = startBlock.getSuccessors().get(0);
+	    }
+	else
+	    {
+		assert startBlock.getPredecessors().size() == 1;
+		assert startBlock.getPredecessors().get(0).size() > 0;
+		startBlock = startBlock.getPredecessors().get(0);
+	    }
+	blocksNeedingUpdate.add( startBlock );
+
 	while(blocksNeedingUpdate.size() > 0)
 	    {
-		BasicBlock nextBlock = blocksNeedingUpdate.iterator().next();
-		System.out.println(nextBlock);
-		System.out.println(nextBlock.size());
-		blocksNeedingUpdate.remove(nextBlock);
-		if(nextBlock.equals(cfg.entry()) && analysis.isForward())
-		    blocksNeedingUpdate.addAll(nextBlock.getSuccessors());
-		else if(nextBlock.equals(cfg.entry()))
-		    continue;
-		if(nextBlock.equals(cfg.exit()) && !analysis.isForward())
-		    blocksNeedingUpdate.addAll(nextBlock.getPredecessors());
-		else if(nextBlock.equals(cfg.entry()))
+		BasicBlock nextBlock = blocksNeedingUpdate.iterator().next(); //take out next block to update
+		blocksNeedingUpdate.remove(nextBlock); //remove it from the queue
+
+		assert nextBlock.size() > 0 || ((analysis.isForward() && nextBlock.equals(cfg.exit())) || (!analysis.isForward() && nextBlock.equals(cfg.entry())));
+		if(nextBlock.size() == 0)
 		    continue;
 	   
 		Flow.DataflowObject oldIn;
@@ -60,22 +68,42 @@ public class MySolver implements Flow.Solver {
 		newIn.copy(oldIn);
 		for(BasicBlock pred : (analysis.isForward() ? nextBlock.getPredecessors() : nextBlock.getSuccessors()))
 		    {
-			if(pred.size() >0)
-			    newIn.meetWith(analysis.getOut((analysis.isForward() ? pred.getQuad(0) : pred.getLastQuad())));
+			if(pred.equals(cfg.entry()))
+			    newIn.meetWith(analysis.getEntry());
+			else if(pred.equals(cfg.exit()))
+			    newIn.meetWith(analysis.getExit());
 			else
-			    ;
+			    newIn.meetWith(analysis.getOut((analysis.isForward() ? pred.getLastQuad() : pred.getQuad(0))));
 		    }
-		Flow.DataflowObject oldOut;
-		oldOut = analysis.getOut((analysis.isForward() ? nextBlock.getLastQuad() : nextBlock.getQuad(0)));
-		Flow.DataflowObject newOut = analysis.newTempVar();
-		newOut.copy(oldOut);
-		for(int i = 0; i < nextBlock..next(); iter.hasNext();)
-		    {
-			System.out.println(q);
-		    }
-		analysis.setIn((analysis.isForward() ? nextBlock.getQuad(0) : nextBlock.getLastQuad()), newIn);
-	    }
+		Flow.DataflowObject top = analysis.newTempVar();
+		top.setToTop();
+		Flow.DataflowObject out = analysis.getOut((analysis.isForward() ? nextBlock.getLastQuad() : nextBlock.getQuad(0)));
+		if(newIn.equals(oldIn) && !out.equals(top)) //no change in input, and we've already processed once, so there will be no change in output.
+		    continue;
+		ListIterator quadIterator = analysis.isForward() ? nextBlock.iterator() : nextBlock.backwardIterator();
 
+		Flow.DataflowObject currentIn = analysis.newTempVar();
+		currentIn = newIn;
+		
+		while(quadIterator.hasNext())
+		    {
+			Quad nextQuad = (Quad)quadIterator.next();
+			analysis.setIn(nextQuad, currentIn);
+			analysis.processQuad(nextQuad);
+			currentIn = analysis.getOut(nextQuad);
+		    }
+		blocksNeedingUpdate.addAll(analysis.isForward() ? nextBlock.getSuccessors() : nextBlock.getPredecessors());
+		if((analysis.isForward() ? nextBlock.getSuccessors().contains(cfg.exit()) : nextBlock.getPredecessors().contains(cfg.entry())))
+                    {
+			Flow.DataflowObject exit = analysis.isForward() ? analysis.getExit() : analysis.getEntry();
+			exit.meetWith(currentIn);
+                        if(analysis.isForward())
+			    analysis.setExit(exit);
+			else
+			    analysis.setEntry(exit);
+                    }
+
+	    }
 
         /***********************
          * Your code goes here *
