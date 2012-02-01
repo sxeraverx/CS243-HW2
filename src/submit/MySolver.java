@@ -63,7 +63,7 @@ public class MySolver implements Flow.Solver {
 		    continue;
 	   
 		Flow.DataflowObject oldIn;
-		oldIn = analysis.getIn((analysis.isForward() ? nextBlock.getQuad(0) : nextBlock.getLastQuad()));
+		oldIn = analysis.isForward() ? analysis.getIn(nextBlock.getQuad(0)) : analysis.getOut(nextBlock.getLastQuad());
 		Flow.DataflowObject newIn = analysis.newTempVar();
 		newIn.copy(oldIn);
 		for(BasicBlock pred : (analysis.isForward() ? nextBlock.getPredecessors() : nextBlock.getSuccessors()))
@@ -73,11 +73,11 @@ public class MySolver implements Flow.Solver {
 			else if(pred.equals(cfg.exit()))
 			    newIn.meetWith(analysis.getExit());
 			else
-			    newIn.meetWith(analysis.getOut((analysis.isForward() ? pred.getLastQuad() : pred.getQuad(0))));
+			    newIn.meetWith(analysis.isForward() ? analysis.getOut(pred.getLastQuad()) : analysis.getIn(pred.getQuad(0)));
 		    }
 		Flow.DataflowObject top = analysis.newTempVar();
 		top.setToTop();
-		Flow.DataflowObject out = analysis.getOut((analysis.isForward() ? nextBlock.getLastQuad() : nextBlock.getQuad(0)));
+		Flow.DataflowObject out = analysis.isForward() ? analysis.getOut(nextBlock.getLastQuad()) : analysis.getIn(nextBlock.getQuad(0));
 		if(newIn.equals(oldIn) && !out.equals(top)) //no change in input, and we've already processed once, so there will be no change in output.
 		    continue;
 		ListIterator quadIterator = analysis.isForward() ? nextBlock.iterator() : nextBlock.backwardIterator();
@@ -88,9 +88,15 @@ public class MySolver implements Flow.Solver {
 		while(quadIterator.hasNext())
 		    {
 			Quad nextQuad = (Quad)quadIterator.next();
-			analysis.setIn(nextQuad, currentIn);
+			if(analysis.isForward())
+			    analysis.setIn(nextQuad, currentIn);
+			else
+			    analysis.setOut(nextQuad, currentIn);
 			analysis.processQuad(nextQuad);
-			currentIn = analysis.getOut(nextQuad);
+			if(analysis.isForward())
+			    currentIn = analysis.getOut(nextQuad);
+			else
+			    currentIn = analysis.getIn(nextQuad);
 		    }
 		blocksNeedingUpdate.addAll(analysis.isForward() ? nextBlock.getSuccessors() : nextBlock.getPredecessors());
 		if((analysis.isForward() ? nextBlock.getSuccessors().contains(cfg.exit()) : nextBlock.getPredecessors().contains(cfg.entry())))
