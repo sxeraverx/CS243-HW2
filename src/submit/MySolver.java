@@ -33,37 +33,38 @@ public class MySolver implements Flow.Solver {
 
         // this needs to come first.
         analysis.preprocess(cfg);
-
-	//Initialize the set of blocks needing update to the algorithm to
-	//only the entry point
+	
 	Set<BasicBlock> blocksNeedingUpdate = new LinkedHashSet<BasicBlock>();
-	BasicBlock startBlock = analysis.isForward() ? cfg.entry() : cfg.exit();
-	assert startBlock.size() == 0;
-	if(analysis.isForward())
+
+	HashMap<BasicBlock,Flow.DataflowObject> basicBlockIn  = new HashMap<BasicBlock,Flow.DataflowObject>();
+	HashMap<BasicBlock,Flow.DataflowObject> basicBlockOut = new HashMap<BasicBlock,Flow.DataflowObject>();
+
+	for(Iterator iter = cfg.reversePostOrderIterator(); iter.hasNext();)
 	    {
-		assert startBlock.getSuccessors().size() == 1;
-		assert startBlock.getSuccessors().get(0).size() > 0;
-		startBlock = startBlock.getSuccessors().get(0);
+		BasicBlock b = (BasicBlock)iter.next();
+		if(b.size()>0)
+		    {
+			basicBlockIn.put(b, analysis.isForward() ? analysis.getIn(b.getQuad(0)) : analysis.getOut(b.getLastQuad()));
+			basicBlockOut.put(b, analysis.isForward() ? analysis.getOut(b.getLastQuad()) : analysis.getIn(b.getQuad(0)));
+		    }
+		else
+		    {
+			basicBlockIn.put(b, analysis.newTempVar());
+			basicBlockOut.put(b, analysis.newTempVar());
+		    }
+		blocksNeedingUpdate.add(b);
 	    }
-	else
-	    {
-		assert startBlock.getPredecessors().size() == 1;
-		assert startBlock.getPredecessors().get(0).size() > 0;
-		startBlock = startBlock.getPredecessors().get(0);
-	    }
-	blocksNeedingUpdate.add( startBlock );
 
 	while(blocksNeedingUpdate.size() > 0)
 	    {
 		BasicBlock nextBlock = blocksNeedingUpdate.iterator().next(); //take out next block to update
 		blocksNeedingUpdate.remove(nextBlock); //remove it from the queue
+		//System.out.println(nextBlock + " " + basicBlockIn.get(nextBlock));
 
-		assert nextBlock.size() > 0 || ((analysis.isForward() && nextBlock.equals(cfg.exit())) || (!analysis.isForward() && nextBlock.equals(cfg.entry())));
-		if(nextBlock.size() == 0)
-		    continue;
+		/*if(nextBlock.size() == 0)
+		continue;*/
 	   
-		Flow.DataflowObject oldIn;
-		oldIn = analysis.isForward() ? analysis.getIn(nextBlock.getQuad(0)) : analysis.getOut(nextBlock.getLastQuad());
+		Flow.DataflowObject oldIn = basicBlockIn.get(nextBlock);
 		Flow.DataflowObject newIn = analysis.newTempVar();
 		newIn.copy(oldIn);
 		for(BasicBlock pred : (analysis.isForward() ? nextBlock.getPredecessors() : nextBlock.getSuccessors()))
@@ -73,21 +74,24 @@ public class MySolver implements Flow.Solver {
 			else if(pred.equals(cfg.exit()))
 			    newIn.meetWith(analysis.getExit());
 			else
-			    newIn.meetWith(analysis.isForward() ? analysis.getOut(pred.getLastQuad()) : analysis.getIn(pred.getQuad(0)));
+			    newIn.meetWith(basicBlockOut.get(pred));
 		    }
-		Flow.DataflowObject top = analysis.newTempVar();
-		top.setToTop();
-		Flow.DataflowObject out = analysis.isForward() ? analysis.getOut(nextBlock.getLastQuad()) : analysis.getIn(nextBlock.getQuad(0));
-		if(newIn.equals(oldIn) && !out.equals(top)) //no change in input, and we've already processed once, so there will be no change in output.
-		    continue;
+		//Flow.DataflowObject top = analysis.newTempVar();
+		//top.setToTop();
+		Flow.DataflowObject out = basicBlockOut.get(nextBlock);
+		//if(newIn.equals(oldIn)) //no change in input, and we've already processed once, so there will be no change in output.
+		//    continue;
+		basicBlockIn.put(nextBlock, newIn);
+		oldIn.copy(newIn);
 		ListIterator quadIterator = analysis.isForward() ? nextBlock.iterator() : nextBlock.backwardIterator();
 
 		Flow.DataflowObject currentIn = analysis.newTempVar();
 		currentIn = newIn;
-		
+		//System.out.println(nextBlock);
 		while(quadIterator.hasNext())
 		    {
 			Quad nextQuad = (Quad)quadIterator.next();
+			//System.out.println(nextQuad);
 			if(analysis.isForward())
 			    analysis.setIn(nextQuad, currentIn);
 			else
@@ -98,7 +102,11 @@ public class MySolver implements Flow.Solver {
 			else
 			    currentIn = analysis.getIn(nextQuad);
 		    }
+		basicBlockOut.put(nextBlock, currentIn);
+		if(!out.equals(currentIn))
+		    {
 		blocksNeedingUpdate.addAll(analysis.isForward() ? nextBlock.getSuccessors() : nextBlock.getPredecessors());
+		    }
 		if((analysis.isForward() ? nextBlock.getSuccessors().contains(cfg.exit()) : nextBlock.getPredecessors().contains(cfg.entry())))
                     {
 			Flow.DataflowObject exit = analysis.isForward() ? analysis.getExit() : analysis.getEntry();
