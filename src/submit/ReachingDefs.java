@@ -1,7 +1,9 @@
 package submit;
 
 // some useful things to import. add any additional imports you need.
+import java.util.*;
 import joeq.Compiler.Quad.*;
+import joeq.Compiler.Quad.Operand.RegisterOperand;
 import flow.Flow;
 
 /**
@@ -14,16 +16,43 @@ public class ReachingDefs implements Flow.Analysis {
      * Class for the dataflow objects in the ReachingDefs analysis.
      * You are free to change this class or move it to another file.
      */
-    public class MyDataflowObject implements Flow.DataflowObject {
+    public static class MyDataflowObject implements Flow.DataflowObject {
         /**
          * Methods from the Flow.DataflowObject interface.
          * See Flow.java for the meaning of these methods.
          * These need to be filled in.
          */
-        public void setToTop() {}
-        public void setToBottom() {}
-        public void meetWith (Flow.DataflowObject o) {}
-        public void copy (Flow.DataflowObject o) {}
+        private Map<String, Set<Integer>> set;
+        //TODO: need universalSet in reaching definition?
+        public static Map<String, Set<Integer>> universalSet;
+        /* constructor */
+        public MyDataflowObject () { 
+          set = new HashMap<String, Set<Integer>>();
+        } 
+
+        public void setToTop() { 
+          set = new HashMap<String, Set<Integer>>();
+        }
+        public void setToBottom() { 
+          set = new HashMap<String, Set<Integer>>(universalSet);
+        }
+        
+        /* Reaching Definition, meet is union  */
+        public void meetWith (Flow.DataflowObject o) {
+          MyDataflowObject a = (MyDataflowObject) o;
+          Set<String> keys = a.set.keySet();
+          for(String key : keys){
+            Set<Integer> l = set.get(key);
+            if(l== null)
+              set.put(key, l = new TreeSet());
+            l.addAll(a.set.get(key));
+          }
+        }
+
+        public void copy (Flow.DataflowObject o) {
+          MyDataflowObject a = (MyDataflowObject) o;
+          set = new HashMap<String, Set<Integer>>(a.set);
+        }
 
         /**
          * toString() method for the dataflow objects which is used
@@ -35,7 +64,24 @@ public class ReachingDefs implements Flow.Analysis {
          * your reaching definitions analysis must match this exactly.
          */
         @Override
-        public String toString() { return ""; }
+        public String toString() {
+          Set<Integer> l = new TreeSet();
+          Set<String> keys = set.keySet();
+          for( String key : keys)
+            l.addAll(set.get(key)); 
+          return l.toString();
+        }
+        
+        public void genVar(String v, int id) {
+          Set<Integer> l = set.get(v);
+          if(l == null )
+            set.put(v, l=new TreeSet<Integer> ());
+          l.add(id);
+        //    System.out.println(q.getID());
+        }
+        public void killVar(String v) {
+          set.remove(v);
+        }
     }
 
     /**
@@ -87,6 +133,20 @@ public class ReachingDefs implements Flow.Analysis {
         /************************************************
          * Your remaining initialization code goes here *
          ************************************************/
+        Map<String, Set<Integer>> s = new HashMap<String, Set<Integer>>();
+        MyDataflowObject.universalSet = s;
+        qit = new QuadIterator(cfg);
+        while (qit.hasNext()) {
+          Quad q = qit.next();
+          for(RegisterOperand def : q.getDefinedRegisters()){
+            String reg_name = new String (def.getRegister().toString());
+            Set<Integer> l = s.get(reg_name);
+            if(l == null)
+              s.put(reg_name, l=new TreeSet<Integer>());
+            l.add(q.getID());
+//            System.out.println(q.getID());
+          }
+        }
     }
 
     /**
@@ -114,15 +174,54 @@ public class ReachingDefs implements Flow.Analysis {
      * See Flow.java for the meaning of these methods.
      * These need to be filled in.
      */
-    public boolean isForward () { return false; }
-    public Flow.DataflowObject getEntry() { return null; }
-    public Flow.DataflowObject getExit() { return null; }
-    public void setEntry(Flow.DataflowObject value) {}
-    public void setExit(Flow.DataflowObject value) {}
-    public Flow.DataflowObject getIn(Quad q) { return null; }
-    public Flow.DataflowObject getOut(Quad q) { return null; }
-    public void setIn(Quad q, Flow.DataflowObject value) {}
-    public void setOut(Quad q, Flow.DataflowObject value) {}
-    public Flow.DataflowObject newTempVar() { return null; }
-    public void processQuad(Quad q) {}
+
+    public Flow.DataflowObject newTempVar() { 
+      return new MyDataflowObject (); 
+    }
+    public boolean isForward () { return true; }
+    public Flow.DataflowObject getEntry() { 
+      Flow.DataflowObject result = newTempVar();
+      result.copy(entry);
+      return result; 
+    }
+    public Flow.DataflowObject getExit() { 
+      Flow.DataflowObject result = newTempVar();
+      result.copy(exit);
+      return result; 
+    }
+    public void setEntry(Flow.DataflowObject value) {
+      entry.copy(value);
+    }
+    public void setExit(Flow.DataflowObject value) {
+      exit.copy(value);
+    }
+    public Flow.DataflowObject getIn(Quad q) { 
+      Flow.DataflowObject result = newTempVar();
+      result.copy(in[q.getID()]);
+      return result; 
+    }
+    public Flow.DataflowObject getOut(Quad q) { 
+      Flow.DataflowObject result = newTempVar();
+      result.copy(out[q.getID()]);
+      return result;
+    }
+    public void setIn(Quad q, Flow.DataflowObject value) {
+      in[q.getID()].copy(value);
+    }
+    public void setOut(Quad q, Flow.DataflowObject value) {
+      out[q.getID()].copy(value);
+    }
+    /* This is the transfer function */
+    public void processQuad(Quad q) {
+      MyDataflowObject val = new MyDataflowObject ();
+      val.copy(in[q.getID()]);
+      for (RegisterOperand def : q.getDefinedRegisters()) {
+        val.killVar(def.getRegister().toString());
+      }
+      for (RegisterOperand def : q.getDefinedRegisters()) {
+        val.genVar(def.getRegister().toString(), q.getID());
+      }
+      out[q.getID()].copy(val);
+    }
+
 }
